@@ -9,10 +9,6 @@ import ollama
 import discord
 import redis
 from logging import getLogger
-from dotenv import load_dotenv
-
-# Load environment variables from .env file
-load_dotenv()
 
 # Piggyback on the logger discord.py set up
 logging = getLogger('discord.discollama')
@@ -40,8 +36,6 @@ class Response:
             await self.r.edit(content=value + end)
             return
 
-        if self.channel.type == discord.ChannelType.text:
-            self.channel = await self.channel.create_thread(name='Discollama Says', message=self.message, auto_archive_duration=60)
 
         self.r = await self.channel.send(value)
 
@@ -80,8 +74,14 @@ class Discollama:
             return
 
         if not self.discord.user.mentioned_in(message):
+            if not await self.is_message_for_bot(message.content):
+                logging.info(f"Ignored message: {message.content} (Author: {message.author})")
+                # Don't respond if the message is not intended for the bot
+                return
+
+        #if not self.discord.user.mentioned_in(message):
             # Don't respond to messages that don't mention us
-            return
+            #return
 
         content = message.content.replace(f'<@{self.discord.user.id}>', '').strip()
         if not content:
@@ -164,6 +164,17 @@ class Discollama:
         if model:
             self.model = model
 
+    async def is_message_for_bot(self, content):
+        response = await self.ollama.generate(
+                                model=self.model,
+                                prompt=f"Is the following message intended for you? You are a Bot named {self.discord.user}. Only answer with yes or no! Even if the message is in a different language. Message: {content}",
+                                context=[],
+                                keep_alive=-1,
+                                stream=False
+                               )
+        logging.info(f'Answer from LLM if the Message is relevant: {response}')
+        return any(keyword in response['response'] for keyword in ["yes", "Yes", "YES", "bot"])
+
     def run(self, token):
         try:
             self.discord.run(token)
@@ -196,7 +207,6 @@ def main():
         model=args.ollama_model,
     )
 
-    discollama.get_model()
     discollama.run(os.getenv('DISCORD_TOKEN'))
 
 
